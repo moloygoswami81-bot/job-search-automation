@@ -1,0 +1,449 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/1mXupaazeYuR77QeRrEnAFpEx6i2IW2Ughlia88-OYyM/edit?usp=drivesdk",
+          "__regex": "https:\\/\\/(?:drive|docs)\\.google\\.com(?:\\/.*|)\\/d\\/([0-9a-zA-Z\\-_]+)(?:\\/.*|)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 110231244,
+          "mode": "list",
+          "cachedResultName": "Form responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1mXupaazeYuR77QeRrEnAFpEx6i2IW2Ughlia88-OYyM/edit#gid=110231244"
+        },
+        "event": "rowAdded",
+        "options": {
+          "valueRender": "UNFORMATTED_VALUE"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        -32
+      ],
+      "id": "126f31c1-e5b4-4e2a-854c-81272d2d3d00",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "A4vN0tILUUhNtYi8",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ (() => {\n  const v = ($json[\"Attach your CV (in PDF)\"] || '').toString().trim().replace(/^=+/, '');\n  const m = v.match(/(?:\\/d\\/|id=|uc\\?id=)([-A-Za-z0-9_-]{20,})/i);\n  return m ? m[1] : (v.match(/[-A-Za-z0-9_-]{20,}/) || [])[0] || '';\n})() }}\n",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -672,
+        -128
+      ],
+      "id": "58adf200-8e3a-4f75-bf03-ea1f835c93b7",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "hgP03j0qzplwqgVD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "K81707494688957"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -512,
+        -32
+      ],
+      "id": "2c987e9b-c35f-45a1-a40b-e70d330963da",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize OCR output + bring form fields into a single item\nreturn items.map(item => {\n  // 1) Extract resume text from common OCR.space response shapes\n  let resume_text = '';\n  if (item.json && item.json.ParsedResults && Array.isArray(item.json.ParsedResults)) {\n    resume_text = item.json.ParsedResults.map(r => r.ParsedText || '').join('\\n\\n');\n  } else if (item.json && item.json.ParsedText) {\n    resume_text = item.json.ParsedText;\n  } else if (item.binary && item.binary.data && item.binary.data.data) {\n    // some nodes could add binary metadata, keep fallback empty\n    resume_text = item.json.resume_text || '';\n  } else {\n    resume_text = item.json.resume_text || '';\n  }\n\n  // 2) Pull form fields (try several possible header names)\n  const query = item.json.Query || item.json.query || item.json['Job Query'] || item.json['Position'] || '';\n  const user_email = item.json.Email || item.json.email || item.json['User Email'] || item.json['Email Address'] || '';\n\n  // 3) Keep original for debugging\n  return {\n    json: {\n      resume_text,\n      query,\n      user_email,\n      original: item.json\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        -128
+      ],
+      "id": "ffcc1103-a9cc-4b57-8c91-62b1dd1b2071",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "=https://serpapi.com/search.json?engine=google_jobs&q={{encodeURIComponent($json[\"query\"])}}+site:linkedin.com/jobs&api_key=036238c3f781d257055ec5e6d7da87ee9b88d1912e5b38e8abf38182fdce13aa",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        -32
+      ],
+      "id": "391da169-738d-4a07-b2ab-185bf9ea5c77",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const text = item.json.output || item.json.text || \"\";\n  const score = parseInt(text.match(/\\d{1,3}/)?.[0] || \"0\");\n  const reason = text.split(/Reason[:\\-]/i)[1]?.trim() || text;\n  return { json: { score, reason, raw_output: text } };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -32
+      ],
+      "id": "bf3fb190-76e8-4f4f-806b-e980369afdea",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/1XCPRzzh0ktVbpCqDCHhjGHjaiimZc0XGXEJvIRS_lzk/edit?usp=drivesdk",
+          "__regex": "https:\\/\\/(?:drive|docs)\\.google\\.com(?:\\/.*|)\\/d\\/([0-9a-zA-Z\\-_]+)(?:\\/.*|)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Matched Jobs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1XCPRzzh0ktVbpCqDCHhjGHjaiimZc0XGXEJvIRS_lzk/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Candidate Email": "=={{ $json[\"user_email\"] || $json[\"email\"] || $json[\"Email\"] }}",
+            "Query": "=={{ $json[\"query\"] || $json[\"Job Query\"] || $json[\"search_query\"] }}",
+            "Job Title": "=={{ $json[\"job_title\"] || $json[\"title\"] || $json[\"job_title_raw\"] }}",
+            "Company": "=={{ $json[\"company\"] || $json[\"company_name\"] || $json[\"companyName\"] }}",
+            "Job Link": "=={{ $json[\"link\"] || $json[\"apply_link\"] || $json[\"url\"] }}",
+            "Score": "=={{ $json[\"score\"] || $json[\"match_score\"] || 0 }}",
+            "Reason": "=={{ $json[\"reason\"] || $json[\"ai_reason\"] || $json[\"explanation\"] || \"\" }}",
+            "Timestamp": "=={{ $now }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Candidate Email",
+              "displayName": "Candidate Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        784,
+        32
+      ],
+      "id": "dab93d5f-fad1-42b3-a083-963857c5ce1c",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "EaHP9whTlMr4YxZa",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Compare this resume and job listing. Return ONLY valid JSON as requested by the System.\n\nResumeText:\n{{$json[\"ParsedText\"]}}\n\nJobTitle:\n{{$json[\"title\"] || $json[\"job_title\"]}}\n\nCompany:\n{{$json[\"company_name\"] || $json[\"company\"]}}\n\nDescription:\n{{$json[\"description\"] || $json[\"job_description\"]}}\n\nIMPORTANT: Respond EXACTLY with valid JSON only:\n{\"score\": number, \"reason\": \"short string (max 120 chars)\"}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an expert job-matching assistant. Your job: compare a candidate resume text and a job description and return EXACTLY one JSON object — no extra words, no explanation, nothing else.  The JSON must have exactly two keys: 1) \"score\" — an integer 0–100 (higher = better fit) 2) \"reason\" — a short string (max 120 characters), one sentence.  IMPORTANT: - Respond ONLY in valid JSON. Do not include any surrounding text or markdown. - Include the word \"json\" somewhere in your reasoning. - Example valid response (must match pattern): {\"score\":85,\"reason\":\"Strong React experience and frontend skills.\"}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        256,
+        -32
+      ],
+      "id": "c64b3cba-cb22-409c-8f16-0139131c28a5",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "options": {
+          "responseFormat": "text"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        144,
+        176
+      ],
+      "id": "74c2ce6b-0d82-4530-b850-cdd0810ef750",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "BUxobd2QcI4ozVok",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        -32
+      ],
+      "id": "c4602f49-8943-4a59-a16b-2517e912483a",
+      "name": "Wait",
+      "webhookId": "9f31d2ba-2754-4931-bb27-4861cdf5d9df"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0f79683f-0440-4bc7-965f-594960bd823d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7402106a2488527c38aaef4f803e9e3172e8152b2cbd5130acfea0d40d05549f"
+  },
+  "id": "FLvJnxl4jaKUioC6",
+  "tags": []
+}
